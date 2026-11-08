@@ -1,2 +1,82 @@
 [tools]
 java = "temurin-21.0.13+9.0.LTS"
+
+# Craftoria (MC 1.21.1) on the Calagopus host. Secrets live in the minecraft notes repo (git-ignored there).
+[vars]
+panel = "http://10.10.50.40:8000"
+server = "a80017b4-9258-4c2d-8832-d8b0b2d0794f"
+panel_key = "../minecraft/.calagopus-key"
+ssh_key = "../minecraft/.ssh-key"
+ssh_host = "agent@10.10.50.40"
+server_dir = "/srv/calagopus/wings/volumes/a80017b4-9258-4c2d-8832-d8b0b2d0794f"
+client_mods = '{{ env.APPDATA }}\PrismLauncher\instances\Craftoria\minecraft\mods'
+
+[tasks."test:ae2"]
+description = "Headless GameTests for the KubeJS bridge and scripts/numen_ae2.js (NeoForge + Numen + KubeJS + AE2)"
+run = "gradlew.bat --no-daemon :plugins:kubejs:runGameTestServer"
+
+[tasks.jar]
+description = "Release jars (datagen first, as upstream's publish workflow does) into build/release/"
+run = "gradlew.bat --no-daemon datagenAll releaseJars"
+
+[tasks."craftoria:cmd"]
+description = "Run a console command on the Craftoria server through the panel, e.g. mise run craftoria:cmd reload"
+usage = 'arg "<command>" var=#true help="The command, without a leading /"'
+shell = "bash -c"
+run = '''
+key=$(tr -d '\r\n ' < '{{ vars.panel_key }}')
+cmd='{{ usage.command | join(sep=" ") }}'
+cmd=${cmd//\\/\\\\}; cmd=${cmd//\"/\\\"}
+curl -sf -X POST -H "Authorization: Bearer $key" -H 'Content-Type: application/json' \
+  -d "{\"command\":\"$cmd\"}" \
+  '{{ vars.panel }}/api/client/servers/{{ vars.server }}/command' && echo "sent: $cmd"
+'''
+
+[tasks."craftoria:script"]
+description = "Upload plugins/kubejs/scripts/numen_ae2.js to the server's kubejs/server_scripts and /reload"
+shell = "bash -c"
+run = '''
+key=$(tr -d '\r\n ' < '{{ vars.panel_key }}')
+curl -sf -X POST -H "Authorization: Bearer $key" -H 'Content-Type: text/plain' \
+  --data-binary @plugins/kubejs/scripts/numen_ae2.js \
+  '{{ vars.panel }}/api/client/servers/{{ vars.server }}/files/write?file=%2Fkubejs%2Fserver_scripts%2Fnumen_ae2.js' \
+  && echo "uploaded numen_ae2.js"
+mise run craftoria:cmd reload
+'''
+
+[tasks."craftoria:log"]
+description = "Last lines of the server's KubeJS log (script load errors show here)"
+shell = "bash -c"
+run = "ssh -i '{{ vars.ssh_key }}' -o BatchMode=yes {{ vars.ssh_host }} sudo tail -n 30 '{{ vars.server_dir }}/logs/kubejs/server.log'"
+
+[tasks."install:server"]
+description = "Stop Craftoria, swap in build/release's Numen jar (old one moved to ~agent/numen-backup), start it"
+depends = ["jar"]
+shell = "bash -c"
+run = '''
+set -e
+jar=$(ls build/release/neoforge/numen-neoforge-*.jar | grep -vE -- '-(sources|javadoc)\.jar$')
+key=$(tr -d '\r\n ' < '{{ vars.panel_key }}')
+power() { curl -sf -X POST -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d "{\"action\":\"$1\"}" '{{ vars.panel }}/api/client/servers/{{ vars.server }}/power'; }
+scp -i '{{ vars.ssh_key }}' -o BatchMode=yes "$jar" {{ vars.ssh_host }}:/tmp/
+power stop && echo "stopping server"
+ssh -i '{{ vars.ssh_key }}' -o BatchMode=yes {{ vars.ssh_host }} "set -e
+  for i in \$(seq 60); do [ -z \"\$(sudo docker ps -q --filter name={{ vars.server }})\" ] && break; sleep 2; done
+  mkdir -p ~/numen-backup
+  sudo sh -c 'mv {{ vars.server_dir }}/mods/numen-neoforge-*.jar ~agent/numen-backup/ 2>/dev/null || true'
+  sudo mv /tmp/$(basename "$jar") {{ vars.server_dir }}/mods/
+  sudo chown 988:988 {{ vars.server_dir }}/mods/$(basename "$jar")"
+power start && echo "starting server with $(basename "$jar")"
+'''
+
+[tasks."install:client"]
+description = "Put build/release's Numen jar into the Craftoria Prism instance (old one kept as .bak)"
+depends = ["jar"]
+shell = "powershell -NoProfile -Command"
+run = """
+$mods = '{{ vars.client_mods }}'
+$built = Get-Item 'build\\release\\neoforge\\numen-neoforge-*.jar' | Where-Object { $_.Name -notmatch '-(sources|javadoc)\\.jar$' }
+Get-ChildItem $mods -Filter 'numen-neoforge-*.jar' | ForEach-Object { Move-Item $_.FullName ($_.FullName + '.bak') -Force }
+Copy-Item $built.FullName $mods
+Write-Host "installed $($built.Name) into $mods"
+"""
