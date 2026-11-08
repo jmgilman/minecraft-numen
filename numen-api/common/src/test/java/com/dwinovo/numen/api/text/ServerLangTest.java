@@ -113,4 +113,25 @@ class ServerLangTest {
         Component stone = Component.translatable("block.minecraft.stone");
         assertSame(stone, lang.translate(stone));
     }
+
+    /** 一个模组的语言文件坏了(Craftoria 里不少模组的非英文文件就是):跳过那一份,别的照旧翻,英文打底的照旧在。 */
+    @Test
+    void aMalformedLanguageFileIsSkippedAndTheRestStillTranslate(@TempDir Path dir) throws IOException {
+        Map<String, String> files = Map.of(
+                "broken/en_us", "{\"broken.hello\":\"Hello\"}",
+                "broken/de_de", "{\"broken.hello\":\"Hallo\",",
+                "notobject/de_de", "[\"not an object\"]",
+                "good/en_us", "{\"good.bye\":\"Bye\"}",
+                "good/de_de", "{\"good.bye\":\"Tschüss\"}");
+        for (Map.Entry<String, String> file : files.entrySet()) {
+            Files.writeString(dir.resolve(file.getKey().replace('/', '_')), file.getValue());
+        }
+        ServerLang lang = ServerLang.read("de_de", List.of("broken", "notobject", "good"), (mod, resource) -> {
+            Path path = dir.resolve(mod + "_" + resource.substring(resource.lastIndexOf('/') + 1, resource.length() - 5));
+            return Files.exists(path) ? path : null;
+        });
+
+        assertEquals("Tschüss", lang.translate(Component.translatable("good.bye")).getString());
+        assertEquals("Hello", lang.translate(Component.translatable("broken.hello")).getString());
+    }
 }

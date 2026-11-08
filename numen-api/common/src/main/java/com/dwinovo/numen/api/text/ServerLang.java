@@ -1,5 +1,6 @@
 package com.dwinovo.numen.api.text;
 
+import com.dwinovo.numen.api.Constants;
 import com.dwinovo.numen.api.platform.Services;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
@@ -11,7 +12,6 @@ import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -210,12 +210,20 @@ public final class ServerLang {
             if (file == null) {
                 continue;
             }
+            Map<String, JsonElement> entries;
             try (Reader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                for (Map.Entry<String, JsonElement> e : JsonParser.parseReader(in).getAsJsonObject().entrySet()) {
+                entries = JsonParser.parseReader(in).getAsJsonObject().asMap();
+            } catch (IOException | RuntimeException e) {
+                // 与原版客户端读语言文件一样:读不出来的那份跳过。别的模组照旧翻,发消息的那一刻也不跟着抛
+                Constants.LOG.warn("跳过 {} 的 {} 语言文件:{}", modId, locale, e.toString());
+                continue;
+            }
+            for (Map.Entry<String, JsonElement> e : entries.entrySet()) {
+                try {
                     out.put(e.getKey(), text(e.getValue()));
+                } catch (RuntimeException ex) {
+                    Constants.LOG.warn("跳过 {} 的 {} 语言文件里的 {}:{}", modId, locale, e.getKey(), ex.toString());
                 }
-            } catch (IOException e) {
-                throw new UncheckedIOException(modId + " 的 " + locale + " 语言文件读不出来", e);
             }
         }
         return out;
