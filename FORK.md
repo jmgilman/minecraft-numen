@@ -5,9 +5,10 @@ server (Minecraft 1.21.1, NeoForge). The upstream README and docs are unchanged.
 
 ## Branches
 
-- `jm/1.21.1` — what runs on Craftoria. Cut from upstream's unreleased `1.21.1` branch (`19c8710b0`), because
-  that is where the server-side brain, the server's remote MCP endpoint and the KubeJS bridge live; the last
-  release (`v0.1.4.1-1.21.1-beta`) has none of them. Rebase onto upstream when it moves.
+- `jm/1.21.1` — what runs on Craftoria. Based on upstream's unreleased `1.21.1` branch (last rebased onto
+  `83239cee4` on 2026-11-08), because that is where the server-side brain, the server's remote MCP endpoint and
+  the KubeJS bridge live; the last release (`v0.1.4.1-1.21.1-beta`) has none of them. Rebase onto upstream when
+  it moves.
 - `jm/26.1.2`, `feat/refinedstorage-plugin` — earlier FTB Evolution 2 work, kept for reference.
 
 ## Changes on top of upstream
@@ -17,6 +18,7 @@ server (Minecraft 1.21.1, NeoForge). The upstream README and docs are unchanged.
 | `plugins/kubejs/scripts/numen_ae2.js` | `ae2.network.items / count / extract / insert`: an ME terminal shows its items only on a player's screen, so companions had no way to see or use the network. Deployed as a KubeJS server script, not in the jar. |
 | `Ae2ScriptGameTests` + AE2/GuideME on the KubeJS GameTest run | Tests the deployed script against real AE2 headless. |
 | `ScriptErrors` recognises `throw new ApiError(...)` from a script | Scripts can fail with real kinds (`out_of_reach`, `not_found`) instead of a generic `failed`. |
+| `ServerLang` skips an unreadable lang file (or one bad value) with a warning | Server-side translation for players without the Numen client threw on malformed lang JSON, and a throw while sending a system message on the main tick crashes the server. Craftoria ships broken JSON in nine locales (de_de, es_ar, fr_fr, ko_kr, pl_pl, pt_br, ru_ru, tr_tr, zh_cn). Upstream `99983eb02` fixed only component-valued entries. Worth sending upstream. |
 
 Script pitfalls found on the way (KubeJS's Rhino): a `const` declared in a loop body keeps its first value on
 every pass (use `let`); `==` between two Java objects compares wrappers (compare ids); overloaded Java
