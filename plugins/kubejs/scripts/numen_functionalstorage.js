@@ -21,6 +21,8 @@ const StorageControllerTile = Java.loadClass('com.buuz135.functionalstorage.bloc
 const StorageControllerExtensionTile =
   Java.loadClass('com.buuz135.functionalstorage.block.tile.StorageControllerExtensionTile')
 const FluidDrawerTile = Java.loadClass('com.buuz135.functionalstorage.block.tile.FluidDrawerTile')
+const ControllableDrawerTile = Java.loadClass('com.buuz135.functionalstorage.block.tile.ControllableDrawerTile')
+const ActionMode = Java.loadClass('com.buuz135.functionalstorage.item.LinkingToolItem$ActionMode')
 const BigInventoryHandler = Java.loadClass('com.buuz135.functionalstorage.inventory.BigInventoryHandler')
 const CompactingInventoryHandler = Java.loadClass('com.buuz135.functionalstorage.inventory.CompactingInventoryHandler')
 const CompactingUtil = Java.loadClass('com.buuz135.functionalstorage.util.CompactingUtil')
@@ -32,6 +34,8 @@ const ErrorKind = Java.loadClass('com.dwinovo.numen.script.ErrorKind')
 
 let DRAWER = 'A drawer, or a storage controller (or controller extension) to reach every drawer linked to it.'
 let AMOUNT = '"one", "stack" (one stack of that item) or "all".'
+let CONTROLLER = 'A storage controller, or a controller extension linked to one.'
+let LINKING_TOOL = 'functionalstorage:linking_tool'
 let DEFAULT_RADIUS = 16
 let MAX_RADIUS = 64
 
@@ -124,26 +128,32 @@ function linkedTo(level, controller) {
   return drawers
 }
 
+// The storage controller a block stands for: the controller itself, or the one a controller extension is linked to.
+// Null for any other block.
+function controllerFor(level, pos) {
+  let tile = level.getBlockEntity(pos)
+  if (tile instanceof StorageControllerTile) return { pos: pos, tile: tile }
+  if (!(tile instanceof StorageControllerExtensionTile)) return null
+  let controllerPos = tile.getControllerPos()
+  let controller = controllerPos != null && level.isLoaded(controllerPos) ? level.getBlockEntity(controllerPos) : null
+  if (!(controller instanceof StorageControllerTile)) {
+    throw new ApiError(ErrorKind.NOT_FOUND, 'the controller extension at ' + at(pos)
+      + ' is not linked to a storage controller', null)
+  }
+  return { pos: controllerPos, tile: controller }
+}
+
 // What a block gives access to: the drawer itself, or every drawer its controller links.
 function storageAt(level, pos) {
   if (!level.isLoaded(pos)) {
     throw new ApiError(ErrorKind.NOT_FOUND, 'the block at ' + at(pos) + ' is not loaded', null)
   }
+  let controller = controllerFor(level, pos)
+  if (controller != null) {
+    return { name: 'the drawers the controller at ' + at(controller.pos) + ' links', controller: true,
+      drawers: linkedTo(level, controller.tile) }
+  }
   let tile = level.getBlockEntity(pos)
-  if (tile instanceof StorageControllerExtensionTile) {
-    let controllerPos = tile.getControllerPos()
-    let controller = controllerPos != null && level.isLoaded(controllerPos) ? level.getBlockEntity(controllerPos) : null
-    if (!(controller instanceof StorageControllerTile)) {
-      throw new ApiError(ErrorKind.NOT_FOUND, 'the controller extension at ' + at(pos)
-        + ' is not linked to a storage controller', null)
-    }
-    return { name: 'the drawers the controller at ' + at(controllerPos) + ' links', controller: true,
-      drawers: linkedTo(level, controller) }
-  }
-  if (tile instanceof StorageControllerTile) {
-    return { name: 'the drawers the controller at ' + at(pos) + ' links', controller: true,
-      drawers: linkedTo(level, tile) }
-  }
   if (isDrawer(tile)) {
     return { name: 'the drawer at ' + at(pos), controller: false, drawers: [{ pos: pos, tile: tile }] }
   }
@@ -483,10 +493,138 @@ function emptyFn(group) {
     })))
 }
 
+function samePos(a, b) {
+  return a != null && b != null && a.x === b.x && a.y === b.y && a.z === b.z
+}
+
+function controllerIn(her, pos) {
+  let controller = controllerFor(her.serverLevel(), pos)
+  if (controller == null) {
+    throw new ApiError(ErrorKind.NOT_FOUND, 'the block at ' + at(pos) + ' (' + blockIdAt(her.serverLevel(), pos)
+      + ') is not a storage controller', 'fs.drawers.nearby()')
+  }
+  return controller
+}
+
+// A player links drawers with the Linking Tool in hand; so does she.
+function needLinkingTool(her) {
+  let inventory = her.getInventory()
+  for (let i = 0; i < inventory.getContainerSize(); i++) {
+    let stack = inventory.getItem(i)
+    if (!stack.isEmpty() && idOf(stack.getItem()) === LINKING_TOOL) return
+  }
+  throw new ApiError(ErrorKind.NO_MATERIAL, 'linking drawers takes a ' + LINKING_TOOL + ', and you carry none',
+    'numen.inv.make("' + LINKING_TOOL + '")')
+}
+
+// The drawers a controller's range covers: within its range on every axis (8 blocks, more with range upgrades), as
+// the Linking Tool allows. Drawers of any kind and controller extensions; never another controller.
+function inRange(level, controller) {
+  let range = controller.tile.getStorageMultiplier()
+  let c = controller.pos
+  let found = []
+  for (let near of tilesNear(level, c.x + 0.5, c.y + 0.5, c.z + 0.5, range * 1.75 + 1)) {
+    if (!(near.tile instanceof ControllableDrawerTile) || near.tile instanceof StorageControllerTile) continue
+    if (Math.abs(near.pos.x - c.x) > range || Math.abs(near.pos.y - c.y) > range || Math.abs(near.pos.z - c.z) > range) continue
+    found.push(near)
+  }
+  return found
+}
+
+// The controller a drawer is linked to, if that controller still stands.
+function linkedController(level, drawer) {
+  let pos = drawer.tile.getControllerPos()
+  if (pos == null || !level.isLoaded(pos)) return null
+  return level.getBlockEntity(pos) instanceof StorageControllerTile ? pos : null
+}
+
+// The drawers a link or unlink call is about: the ones named, or every one in range. Named positions that are not a
+// drawer in range come back as missing.
+function chosen(level, controller, named) {
+  let all = inRange(level, controller)
+  if (named == null) return { drawers: all, missing: [] }
+  let drawers = []
+  let missing = []
+  for (let i = 0; i < named.size(); i++) {
+    let pos = named.get(i)
+    let hit = all.filter(d => samePos(d.pos, pos))
+    if (hit.length > 0) drawers.push(hit[0])
+    else missing.push(at(pos))
+  }
+  return { drawers: drawers, missing: missing }
+}
+
+function linkFn(group) {
+  group.fn('link', fn => fn
+    .summary('Link drawers to a storage controller with your Linking Tool, so take and put through it reach them.')
+    .param('controller', 'pos', CONTROLLER)
+    .option('drawers', 'pos[]', 'Only these drawers (or controller extensions).',
+      'every drawer in its range that no other controller links')
+    .returns('integer')
+    .pending()
+    .example('fs.drawers.link({x = 12, y = 64, z = -33})')
+    .example('fs.drawers.link({x = 12, y = 64, z = -33}, {drawers = {{x = 12, y = 65, z = -30}}})')
+    .note('You must carry a ' + LINKING_TOOL + ' and stand within reach of the controller. It reaches drawers up to '
+      + '8 blocks away on each axis (more with range upgrades). A drawer another controller links stays with it.')
+    .run(call => call.useBlock(call.arg('controller'), (her, pos) => {
+      reach(her, pos)
+      needLinkingTool(her)
+      let level = her.serverLevel()
+      let controller = controllerIn(her, pos)
+      let picked = chosen(level, controller, call.option('drawers'))
+      let elsewhere = picked.drawers.filter(d => {
+        let other = linkedController(level, d)
+        return other != null && !samePos(other, controller.pos)
+      })
+      let todo = picked.drawers.filter(d => linkedController(level, d) == null)
+      if (todo.length > 0) {
+        // A controller whose drawers list was never rebuilt in this world has no level yet; it would link nothing.
+        controller.tile.getConnectedDrawers().setLevel(level)
+        controller.tile.addConnectedDrawers(ActionMode.ADD, todo.map(d => d.pos))
+      }
+      let linked = todo.filter(d => samePos(d.tile.getControllerPos(), controller.pos)).length
+      call.report('linked ' + linked + ' drawers to the controller at ' + at(controller.pos) + '; it now links '
+        + linkedTo(level, controller.tile).length + ' item drawers'
+        + (elsewhere.length > 0 ? '; ' + elsewhere.length + ' belong to another controller: '
+          + elsewhere.map(d => at(d.pos) + ' (to ' + at(linkedController(level, d)) + ')').join(', ') : '')
+        + (picked.missing.length > 0 ? '; not a drawer in its range: ' + picked.missing.join(', ') : ''))
+      return linked
+    })))
+}
+
+function unlinkFn(group) {
+  group.fn('unlink', fn => fn
+    .summary('Unlink drawers from a storage controller with your Linking Tool.')
+    .param('controller', 'pos', CONTROLLER)
+    .option('drawers', 'pos[]', 'Only these drawers (or controller extensions).', 'every drawer it links')
+    .returns('integer')
+    .pending()
+    .example('fs.drawers.unlink({x = 12, y = 64, z = -33}, {drawers = {{x = 12, y = 65, z = -30}}})')
+    .note('You must carry a ' + LINKING_TOOL + ' and stand within reach of the controller. The drawers keep '
+      + 'what they hold.')
+    .run(call => call.useBlock(call.arg('controller'), (her, pos) => {
+      reach(her, pos)
+      needLinkingTool(her)
+      let level = her.serverLevel()
+      let controller = controllerIn(her, pos)
+      let picked = chosen(level, controller, call.option('drawers'))
+      let todo = picked.drawers.filter(d => samePos(d.tile.getControllerPos(), controller.pos))
+      if (todo.length > 0) {
+        controller.tile.getConnectedDrawers().setLevel(level)
+        controller.tile.addConnectedDrawers(ActionMode.REMOVE, todo.map(d => d.pos))
+      }
+      let unlinked = todo.filter(d => d.tile.getControllerPos() == null).length
+      call.report('unlinked ' + unlinked + ' drawers from the controller at ' + at(controller.pos) + '; it now links '
+        + linkedTo(level, controller.tile).length + ' item drawers'
+        + (picked.missing.length > 0 ? '; not a drawer in its range: ' + picked.missing.join(', ') : ''))
+      return unlinked
+    })))
+}
+
 NumenEvents.register(event => {
   event.plugin('fs', plugin => {
     plugin.group('drawers', 'Functional Storage drawers and storage controllers: list, find, take out and put in '
-      + 'without aiming at a slot.', group => {
+      + 'without aiming at a slot, and link drawers to a controller.', group => {
 
       group.fn('nearby', fn => fn
         .summary('Every drawer and storage controller near you, nearest first, one line each with what it holds.')
@@ -556,6 +694,8 @@ NumenEvents.register(event => {
       takeFn(group)
       putFn(group)
       emptyFn(group)
+      linkFn(group)
+      unlinkFn(group)
     })
   })
 })

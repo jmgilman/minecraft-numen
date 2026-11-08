@@ -32,12 +32,22 @@ import static com.dwinovo.numen.gametest.GameTestKit.*;
 public class FunctionalStorageScriptGameTests {
 
     private static final String BATCH = "numen_kubejs_functionalstorage";
+    /** 默认连"范围里全部"的用例单独一批:同一批里旁边用例的抽屉会落进控制器的范围。 */
+    private static final String LINK_BATCH = "numen_kubejs_functionalstorage_link";
     private static final String SCRIPT = "numen_functionalstorage.js";
 
+    /** 两批都要这份脚本;先跑的那一批装上,后跑的不再重载(重载的那几刻函数会短暂不在)。 */
     @BeforeBatch(batch = BATCH)
     public static void prepareFunctionalStorageBatch(ServerLevel level) {
         settleWorld(level, Difficulty.PEACEFUL, NOON);
-        KubeJsScripts.install(level.getServer(), SCRIPT);
+        if (ApiRegistry.function("fs.drawers.unlink") == null) {
+            KubeJsScripts.install(level.getServer(), SCRIPT);
+        }
+    }
+
+    @BeforeBatch(batch = LINK_BATCH)
+    public static void prepareLinkBatch(ServerLevel level) {
+        prepareFunctionalStorageBatch(level);
     }
 
     private static BlockPos place(GameTestHelper helper, int x, int y, int z, String id) {
@@ -63,9 +73,14 @@ public class FunctionalStorageScriptGameTests {
         return items(helper, pos).getStackInSlot(slot).getCount();
     }
 
+    /** 这只抽屉连着的控制器;没连是 null。 */
+    private static BlockPos controllerOf(GameTestHelper helper, BlockPos drawer) {
+        return ((ControllableDrawerTile<?>) helper.getLevel().getBlockEntity(drawer)).getControllerPos();
+    }
+
     /** 等到脚本的函数登记上(整批开始时装的脚本要几刻才重载完)。 */
     private static Steps registered(GameTestHelper helper) {
-        return steps(helper).thenWaitUntil(() -> helper.assertTrue(ApiRegistry.function("fs.drawers.empty") != null,
+        return steps(helper).thenWaitUntil(() -> helper.assertTrue(ApiRegistry.function("fs.drawers.unlink") != null,
                 "the Functional Storage script's functions were not registered after /reload"));
     }
 
@@ -173,6 +188,62 @@ public class FunctionalStorageScriptGameTests {
             helper.assertTrue(!run.succeeded() && "failed".equals(run.kind())
                             && her.getInventory().countItem(Items.SAND) == 5 && held(helper, spare, 0) == 0,
                     "sand no linked drawer is set to was not refused: kind " + run.kind() + ", " + run.outcome());
+            CompanionFactory.despawn(helper.getLevel().getServer(), her);
+        }).thenSucceed();
+    }
+
+    /**
+     * 带着连接工具的她把控制器范围里的抽屉连上:范围里两只空闲的连上(圆石、泥土),范围外(高 10 格)的一只不连,别的控制器连着的一只留给它;
+     * 经控制器放进 20 块圆石进了圆石那一只;再只断开泥土那一只,控制器只剩一只。自成一批:默认连"范围里全部",旁边用例的抽屉不能进来。
+     */
+    @GameTest(template = "floor16", timeoutTicks = 400, batch = LINK_BATCH)
+    public static void link_connects_free_drawers_in_range_and_unlink_releases_them(GameTestHelper helper) {
+        BlockPos controller = place(helper, 8, 2, 7, "functionalstorage:storage_controller");
+        BlockPos cobble = place(helper, 8, 3, 7, "functionalstorage:oak_1");
+        BlockPos dirt = place(helper, 9, 2, 7, "functionalstorage:oak_1");
+        BlockPos far = place(helper, 8, 12, 7, "functionalstorage:oak_1");
+        BlockPos other = place(helper, 3, 2, 7, "functionalstorage:storage_controller");
+        BlockPos taken = place(helper, 4, 2, 7, "functionalstorage:oak_1");
+        fill(helper, cobble, 0, Items.COBBLESTONE, 100);
+        fill(helper, dirt, 0, Items.DIRT, 10);
+        StorageControllerTile<?> otherTile = (StorageControllerTile<?>) helper.getLevel().getBlockEntity(other);
+        otherTile.getConnectedDrawers().setLevel(helper.getLevel());
+        otherTile.addConnectedDrawers(LinkingToolItem.ActionMode.ADD, taken);
+        NumenPlayer her = spawnAt(helper, "gametest_fs_link", new BlockPos(6, 2, 7), false);
+        her.getInventory().add(new ItemStack(BuiltInRegistries.ITEM.get(
+                ResourceLocation.parse("functionalstorage:linking_tool"))));
+        her.getInventory().add(new ItemStack(Items.COBBLESTONE, 20));
+
+        program(registered(helper), helper, her, "local c = " + xyz(controller) + "\n"
+                + "local linked = fs.drawers.link(c)\n"
+                + "local put = fs.drawers.put(c, \"minecraft:cobblestone\")\n"
+                + "local unlinked = fs.drawers.unlink(c, {drawers = {" + xyz(dirt) + "}})\n"
+                + "return table.concat({linked, put, unlinked, #fs.drawers.contents(c)}, \"/\")", run -> {
+            String receipt = receipt(run);
+            helper.assertTrue(run.ranToTheEnd() && receipt.contains("2/20/1/1")
+                            && receipt.contains("1 belong to another controller"),
+                    "linking and unlinking went wrong: " + receipt);
+            helper.assertTrue(controllerOf(helper, cobble) != null && controllerOf(helper, cobble).equals(controller)
+                            && controllerOf(helper, dirt) == null && controllerOf(helper, far) == null
+                            && other.equals(controllerOf(helper, taken)) && held(helper, cobble, 0) == 120,
+                    "the drawers are linked to " + controllerOf(helper, cobble) + ", " + controllerOf(helper, dirt)
+                            + ", " + controllerOf(helper, far) + ", " + controllerOf(helper, taken));
+            CompanionFactory.despawn(helper.getLevel().getServer(), her);
+        }).thenSucceed();
+    }
+
+    /** 没带连接工具:no_material,提示的下一步是做一把,抽屉一只也没连上。 */
+    @GameTest(template = "floor16", timeoutTicks = 200, batch = BATCH)
+    public static void linking_without_a_linking_tool_says_make_one(GameTestHelper helper) {
+        BlockPos controller = place(helper, 8, 2, 7, "functionalstorage:storage_controller");
+        BlockPos drawer = place(helper, 8, 3, 7, "functionalstorage:oak_1");
+        NumenPlayer her = spawnAt(helper, "gametest_fs_notool", new BlockPos(6, 2, 7), false);
+
+        program(registered(helper), helper, her, "return fs.drawers.link(" + xyz(controller) + ")", run -> {
+            helper.assertTrue(!run.succeeded() && "no_material".equals(run.kind())
+                            && String.valueOf(run.hint()).contains("functionalstorage:linking_tool")
+                            && controllerOf(helper, drawer) == null,
+                    "linking without the tool was not refused: kind " + run.kind() + ", hint " + run.hint());
             CompanionFactory.despawn(helper.getLevel().getServer(), her);
         }).thenSucceed();
     }
