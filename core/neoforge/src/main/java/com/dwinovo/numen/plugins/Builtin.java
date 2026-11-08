@@ -33,6 +33,7 @@ public final class Builtin {
         Gate gate = new Gate(ModList.get()::isLoaded, ModJar::find);
         gate.open("yes_steve_model", "ysm", skills -> () -> YsmOnNeoForge.install(skills));
         gate.open("curios", () -> com.dwinovo.numen.plugins.curios.NumenCurios::install);
+        gate.open("refinedstorage", "refinedstorage", skills -> () -> RefinedStorageOnNeoForge.install(skills));
         // 车万女仆与森罗物语:厨房都不支持这个 MC 版本(它们的 NeoForge 版封顶 1.21.1),所以这条分支上没有那两个联动模块。
     }
 
@@ -50,6 +51,13 @@ public final class Builtin {
         @Override
         public Ysm.Storage storage() {
             return Ysm.Storage.NEOFORGE;
+        }
+    }
+
+    /** Refined Storage 联动的入口。只为让联动的类型待在嵌套类里(见类注释),它自己不需要宿主提供什么。 */
+    private static final class RefinedStorageOnNeoForge {
+        static void install(Path skills) {
+            com.dwinovo.numen.plugins.refinedstorage.NumenRefinedStorage.install(skills);
         }
     }
 }

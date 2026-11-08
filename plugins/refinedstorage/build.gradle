@@ -1,0 +1,20 @@
+plugins { id 'numen-plugin' }
+
+// Refined Storage 在这个 MC 版本上发的是 NeoForge 版,本联动只对着它编译。
+neoForge { version = neoforge_version }
+
+repositories {
+    exclusiveContent {
+        forRepository { maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' } }
+        filter { includeGroup 'maven.modrinth' }
+    }
+}
+
+dependencies {
+    // 瘦 api jar 取 NeoForge 那份:本联动本来就只跑在 NeoForge 上
+    compileOnly files(project(':api:neoforge').tasks.named('apiJar'))
+    // 对着玩家装的那一版 Refined Storage 编译;运行时由玩家自己装的那份提供,本模块不携带它一个字节。
+    compileOnly "maven.modrinth:refined-storage:${refinedstorage_version}"
+    // lint 测试经反射读本组的函数签名,签名里没有 Refined Storage 的类型,但类校验会碰到方法体里的;放上运行期类路径免得校验失败
+    testRuntimeOnly "maven.modrinth:refined-storage:${refinedstorage_version}"
+}

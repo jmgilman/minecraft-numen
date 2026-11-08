@@ -1,2 +1,34 @@
 [tools]
 java = "temurin-25.0.5+8.0.LTS"
+
+[vars]
+prism_mods = '{{ env.APPDATA }}\PrismLauncher\instances\FTB Evolution 2\.minecraft\mods'
+
+[tasks."test:game"]
+description = "Run GameTests headless (NeoForge + Numen + Refined Storage only); default: the Refined Storage ones"
+usage = 'arg "[selector]" default="numen:refinedstoragegametests.*" help="Test selector, e.g. numen:inventorygametests.* or numen:*"'
+run = 'gradlew.bat --no-daemon :core:neoforge:runGameTestServer "-Pgametests={{usage.selector}}"'
+
+[tasks."test:unit"]
+description = "Unit tests and the plugins' API lint reports (no Minecraft)"
+run = "gradlew.bat --no-daemon :ai:test :agent:test :api:common:test :core:common:test :plugins:ysm:test :plugins:refinedstorage:test"
+
+[tasks.jar]
+description = "Build the release jar (datagen first, as upstream releases do)"
+run = "gradlew.bat --no-daemon :core:neoforge:runData :core:neoforge:build -x test"
+
+[tasks.dev]
+description = "Start a dev client (NeoForge + Numen + Refined Storage) to poke at things by hand"
+run = "gradlew.bat --no-daemon :core:neoforge:runClient"
+
+[tasks."install:client"]
+description = "Replace Numen in the FTB Evolution 2 Prism instance with this build (old jar kept as .bak)"
+depends = ["jar"]
+shell = "powershell -NoProfile -Command"
+run = """
+$mods = '{{ vars.prism_mods }}'
+$built = Get-Item 'core\\neoforge\\build\\libs\\numen-neoforge-*.jar' | Where-Object { $_.Name -notmatch '-(sources|javadoc)\\.jar$' }
+Get-ChildItem $mods -Filter 'numen-neoforge-*.jar' | ForEach-Object { Move-Item $_.FullName ($_.FullName + '.bak') -Force }
+Copy-Item $built.FullName $mods
+Write-Host "installed $($built.Name) into $mods"
+"""
