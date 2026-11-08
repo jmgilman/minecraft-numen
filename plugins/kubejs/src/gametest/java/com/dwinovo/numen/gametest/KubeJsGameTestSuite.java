@@ -7,6 +7,6 @@ public final class KubeJsGameTestSuite extends CompanionGameTestSuite {
 
     @Override
     public List<Class<?>> classes() {
-        return List.of(KubeJsGameTests.class);
+        return List.of(KubeJsGameTests.class, Ae2ScriptGameTests.class);
     }
 }

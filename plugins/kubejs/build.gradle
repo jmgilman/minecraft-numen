@@ -9,6 +9,11 @@ repositories {
         forRepository { maven { name = 'Latvian'; url = 'https://maven.latvian.dev/releases' } }
         filter { includeGroup 'dev.latvian.mods' }
     }
+    // AE2 脚本(scripts/numen_ae2.js)的用例要真的 AE2 与它要的 GuideME,从 Modrinth 取,版本对准 Craftoria
+    exclusiveContent {
+        forRepository { maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' } }
+        filter { includeGroup 'maven.modrinth' }
+    }
 }
 
 // KubeJS 是 LGPL-3.0:只在编译期引用它的插件接口,运行时由玩家装的那份提供,本模块不携带它一个字节。
@@ -65,6 +70,8 @@ neoForge {
             systemProperties.put('numen.gametest.suites', providers.gradleProperty('gametest').orElse(kubejsSuite))
             systemProperty('neoforge.enabledGameTestNamespaces', 'numen_kubejs')
             systemProperty('numen.gametest.structures', gameTestStructures.get().asFile.absolutePath)
+            // 用例装上服务器的那一份 AE2 脚本,不另写一份
+            systemProperty('numen.ae2.script', project.file('scripts/numen_ae2.js').absolutePath)
         }
     }
 }
@@ -80,6 +87,10 @@ dependencies {
     gametestImplementation project(':numen-api:neoforge')
     // KubeJS 本体与 Rhino 在运行时类路径上当模组加载;KubeJS 运行期的几个库(小型 web 服务、动图)已经嵌套在它的 jar 里
     kubejs.each { gametestImplementation(it) { transitive = false } }
+    // AE2 与 GuideME 在运行时类路径上当模组加载,只给 AE2 脚本的用例
+    ["maven.modrinth:ae2:${ae2_version}", "maven.modrinth:guideme:${guideme_version}"].each {
+        gametestRuntimeOnly(it) { transitive = false }
+    }
 }
 
 tasks.named('compileGametestJava') {
