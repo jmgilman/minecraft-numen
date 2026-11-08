@@ -9,10 +9,15 @@ repositories {
         forRepository { maven { name = 'Latvian'; url = 'https://maven.latvian.dev/releases' } }
         filter { includeGroup 'dev.latvian.mods' }
     }
-    // AE2 脚本(scripts/numen_ae2.js)的用例要真的 AE2 与它要的 GuideME,从 Modrinth 取,版本对准 Craftoria
+    // 脚本(scripts/*.js)的用例要真的模组:AE2 与 GuideME、Titanium 从 Modrinth 取,版本对准 Craftoria
     exclusiveContent {
         forRepository { maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' } }
         filter { includeGroup 'maven.modrinth' }
+    }
+    // Functional Storage 那一版只在 CurseForge 上
+    exclusiveContent {
+        forRepository { maven { name = 'CurseMaven'; url = 'https://cursemaven.com' } }
+        filter { includeGroup 'curse.maven' }
     }
 }
 
@@ -70,8 +75,8 @@ neoForge {
             systemProperties.put('numen.gametest.suites', providers.gradleProperty('gametest').orElse(kubejsSuite))
             systemProperty('neoforge.enabledGameTestNamespaces', 'numen_kubejs')
             systemProperty('numen.gametest.structures', gameTestStructures.get().asFile.absolutePath)
-            // 用例装上服务器的那一份 AE2 脚本,不另写一份
-            systemProperty('numen.ae2.script', project.file('scripts/numen_ae2.js').absolutePath)
+            // 用例装上服务器的那几份脚本,不另写一份
+            systemProperty('numen.kubejs.scripts', project.file('scripts').absolutePath)
         }
     }
 }
@@ -90,6 +95,10 @@ dependencies {
     // AE2 与 GuideME 在运行时类路径上当模组加载,只给 AE2 脚本的用例
     ["maven.modrinth:ae2:${ae2_version}", "maven.modrinth:guideme:${guideme_version}"].each {
         gametestRuntimeOnly(it) { transitive = false }
+    }
+    // Functional Storage 与 Titanium 只给 Functional Storage 脚本的用例:用例要直接连控制器、上锁,编译期也要它们
+    ["curse.maven:functional-storage-556861:${functionalstorage_curse_file}", "maven.modrinth:titanium:${titanium_version}"].each {
+        gametestImplementation(it) { transitive = false }
     }
 }
 

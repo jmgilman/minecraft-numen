@@ -11,8 +11,8 @@ ssh_host = "agent@10.10.50.40"
 server_dir = "/srv/calagopus/wings/volumes/a80017b4-9258-4c2d-8832-d8b0b2d0794f"
 client_mods = '{{ env.APPDATA }}\PrismLauncher\instances\Craftoria\minecraft\mods'
 
-[tasks."test:ae2"]
-description = "Headless GameTests for the KubeJS bridge and scripts/numen_ae2.js (NeoForge + Numen + KubeJS + AE2)"
+[tasks."test:scripts"]
+description = "Headless GameTests for the KubeJS bridge and plugins/kubejs/scripts/*.js (NeoForge + Numen + KubeJS + AE2 + Functional Storage)"
 run = "gradlew.bat --no-daemon :plugins:kubejs:runGameTestServer"
 
 [tasks.jar]
@@ -33,14 +33,18 @@ curl -sf -X POST -H "Authorization: Bearer $key" -H 'Content-Type: application/j
 '''
 
 [tasks."craftoria:script"]
-description = "Upload plugins/kubejs/scripts/numen_ae2.js to the server's kubejs/server_scripts and /reload"
+description = "Upload every plugins/kubejs/scripts/*.js to the server's kubejs/server_scripts and /reload"
 shell = "bash -c"
 run = '''
+set -e
 key=$(tr -d '\r\n ' < '{{ vars.panel_key }}')
-curl -sf -X POST -H "Authorization: Bearer $key" -H 'Content-Type: text/plain' \
-  --data-binary @plugins/kubejs/scripts/numen_ae2.js \
-  '{{ vars.panel }}/api/client/servers/{{ vars.server }}/files/write?file=%2Fkubejs%2Fserver_scripts%2Fnumen_ae2.js' \
-  && echo "uploaded numen_ae2.js"
+for script in plugins/kubejs/scripts/*.js; do
+  name=$(basename "$script")
+  curl -sf -X POST -H "Authorization: Bearer $key" -H 'Content-Type: text/plain' \
+    --data-binary @"$script" \
+    "{{ vars.panel }}/api/client/servers/{{ vars.server }}/files/write?file=%2Fkubejs%2Fserver_scripts%2F$name"
+  echo "uploaded $name"
+done
 mise run craftoria:cmd reload
 '''
 
