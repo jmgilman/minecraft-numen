@@ -3,10 +3,6 @@ package com.dwinovo.numen.gametest;
 import com.dwinovo.numen.api.entity.CompanionFactory;
 import com.dwinovo.numen.api.entity.NumenPlayer;
 import com.dwinovo.numen.api.sdk.ApiRegistry;
-import dev.latvian.mods.kubejs.KubeJSPaths;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -23,8 +19,8 @@ import net.minecraft.world.item.Items;
 import static com.dwinovo.numen.gametest.GameTestKit.*;
 
 /**
- * {@code plugins/kubejs/scripts/numen_ae2.js}:脚本写的 {@code ae2.network} 经一个 ME 方块读、取、存整个网络。用的就是要装上服务器的那一份脚本
- * (路径由 {@code numen.ae2.script} 给),拷进运行目录的 {@code kubejs/server_scripts} 再 {@code /reload}。AE2 在这一次跑批的运行时类路径上。
+ * {@code plugins/kubejs/scripts/numen_ae2.js}:脚本写的 {@code ae2.network} 经一个 ME 方块读、取、存整个网络。用的就是要装上服务器的那一份脚本,
+ * 由 {@link KubeJsScripts#install} 拷进运行目录的 {@code kubejs/server_scripts} 再 {@code /reload}。AE2 在这一次跑批的运行时类路径上。
  * 网络是一张无需线缆的临时网:创造能量元件、ME 驱动器、ME 接口三格相邻。
  */
 public class Ae2ScriptGameTests {
@@ -34,19 +30,6 @@ public class Ae2ScriptGameTests {
     @BeforeBatch(batch = BATCH)
     public static void prepareAe2Batch(ServerLevel level) {
         settleWorld(level, Difficulty.PEACEFUL, NOON);
-    }
-
-    /** 把要上线的那份脚本拷进运行目录,{@code /reload},等到它的函数登记上。 */
-    private static void installScript(MinecraftServer server) {
-        try {
-            Path source = Path.of(System.getProperty("numen.ae2.script"));
-            Path target = KubeJSPaths.SERVER_SCRIPTS.resolve("numen_ae2.js");
-            Files.createDirectories(target.getParent());
-            Files.copy(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
-        }
-        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
     }
 
     private static void place(GameTestHelper helper, BlockPos pos, String id) {
@@ -71,7 +54,7 @@ public class Ae2ScriptGameTests {
                 ResourceLocation.parse("ae2:item_storage_cell_1k"))));
         her.getInventory().add(new ItemStack(Items.COBBLESTONE, 40));
         AtomicReference<ToolRun> run = new AtomicReference<>();
-        installScript(server);
+        KubeJsScripts.install(server, "numen_ae2.js");
 
         steps(helper)
                 .thenWaitUntil(() -> helper.assertTrue(ApiRegistry.function("ae2.network.extract") != null,
@@ -106,7 +89,7 @@ public class Ae2ScriptGameTests {
         place(helper, iface, "ae2:interface");
         NumenPlayer her = spawnAt(helper, "gametest_me_far", new BlockPos(1, 2, 1), false);
         AtomicReference<ToolRun> run = new AtomicReference<>();
-        installScript(server);
+        KubeJsScripts.install(server, "numen_ae2.js");
 
         steps(helper)
                 .thenWaitUntil(() -> helper.assertTrue(ApiRegistry.function("ae2.network.items") != null,
