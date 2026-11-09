@@ -1,7 +1,8 @@
 plugins { id 'numen-plugin' }
 
-// 只接 NeoForge:KubeJS 1.21.1 只有 NeoForge 版,编译对着 NeoForge 那份。
-neoForge { version = neoforge_version }
+// 只接 NeoForge:KubeJS 1.21.1 只有 NeoForge 版,编译对着 NeoForge 那份。版本对准 Craftoria 跑的那一版(见 gradle.properties 的
+// kubejs_neoforge_version),而不是全仓的 neoforge_version:脚本的用例装的是 Craftoria 那几份模组,有的(Integrated Dynamics 自带的兼容模组)要更新的 NeoForge。
+neoForge { version = kubejs_neoforge_version }
 
 repositories {
     // KubeJS 与它的 Rhino 各自只从作者的仓库取,仓库也截不走别的坐标
@@ -81,6 +82,23 @@ neoForge {
     }
 }
 
+/*
+ * Integrated Dynamics 的 jar 里带着它与 Refined Storage 联动的 GameTest 类(GameTestsAspectsRefinedStorage)。NeoForge 开测时把每个
+ * @GameTestHolder 类都载入,不看命名空间开没开;没装 Refined Storage 就载不进来,整个测试服起不来。用例用一份去掉这一个类的拷贝,
+ * 其余与 Craftoria 那份 jar 逐字节相同。
+ */
+configurations {
+    integratedDynamicsJar { transitive = false }
+}
+
+def integratedDynamicsForGameTests = tasks.register('integratedDynamicsForGameTests', Zip) {
+    from({ zipTree(configurations.integratedDynamicsJar.singleFile) }) {
+        exclude 'org/cyclops/integrateddynamicscompat/modcompat/refinedstorage/gametest/**'
+    }
+    archiveFileName = 'integrateddynamics-for-gametests.jar'
+    destinationDirectory = layout.buildDirectory.dir('gametest-mods')
+}
+
 dependencies {
     gametestCompileOnly files({ numenNeoForge.sourceSets.main.output })
     gametestCompileOnly project(':numen:common').sourceSets.testFixtures.output
@@ -98,6 +116,15 @@ dependencies {
     }
     // Functional Storage 与 Titanium 只给 Functional Storage 脚本的用例:用例要直接连控制器、上锁,编译期也要它们
     ["curse.maven:functional-storage-556861:${functionalstorage_curse_file}", "maven.modrinth:titanium:${titanium_version}"].each {
+        gametestImplementation(it) { transitive = false }
+    }
+    // Integrated Dynamics 一家只给 Integrated Dynamics 脚本的用例:用例借 Integrated Crafting 自带的 GameTest 助手搭网络,编译期也要它们
+    integratedDynamicsJar "curse.maven:integrated-dynamics-236307:${integrateddynamics_curse_file}"
+    gametestImplementation files(integratedDynamicsForGameTests)
+    ["curse.maven:cyclops-core-232758:${cyclopscore_curse_file}",
+     "curse.maven:common-capabilities-247007:${commoncapabilities_curse_file}",
+     "curse.maven:integrated-tunnels-251389:${integratedtunnels_curse_file}",
+     "maven.modrinth:integrated-crafting:${integratedcrafting_version}"].each {
         gametestImplementation(it) { transitive = false }
     }
 }

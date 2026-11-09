@@ -12,7 +12,7 @@ server_dir = "/srv/calagopus/wings/volumes/a80017b4-9258-4c2d-8832-d8b0b2d0794f"
 client_mods = '{{ env.APPDATA }}\PrismLauncher\instances\Craftoria\minecraft\mods'
 
 [tasks."test:scripts"]
-description = "Headless GameTests for the KubeJS bridge and plugins/kubejs/scripts/*.js (NeoForge + Numen + KubeJS + AE2 + Functional Storage)"
+description = "Headless GameTests for the KubeJS bridge and plugins/kubejs/scripts/*.js (NeoForge + Numen + KubeJS + AE2 + Functional Storage + Integrated Dynamics)"
 run = "gradlew.bat --no-daemon :plugins:kubejs:runGameTestServer"
 
 [tasks.jar]
