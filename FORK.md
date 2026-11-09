@@ -19,6 +19,8 @@ server (Minecraft 1.21.1, NeoForge). The upstream README and docs are unchanged.
 | `Ae2ScriptGameTests` + AE2/GuideME on the KubeJS GameTest run | Tests the deployed script against real AE2 headless. |
 | `plugins/kubejs/scripts/numen_functionalstorage.js` | `fs.drawers.nearby / find / contents / take / put / empty / link / unlink`: Functional Storage drawers take and give items through clicks aimed at a slot on their face (a stack only while sneaking, everything only on a double click), which a companion cannot do reliably. The script uses the drawers' item handler instead, on a drawer or through a storage controller, and links drawers to a controller as the Linking Tool does (she must carry one). Deployed as a KubeJS server script. |
 | `FunctionalStorageScriptGameTests` + Functional Storage/Titanium on the KubeJS GameTest run | Tests the deployed script against the Functional Storage jar Craftoria ships (1.21.1-1.5.8 from CurseMaven, Titanium 1.21-4.0.50 from Modrinth). |
+| `plugins/kubejs/scripts/numen_integrateddynamics.js` | `id.network.items / count / extract / insert / craftable / craft / jobs / cancel`: an Integrated Dynamics Storage Terminal shows the network's items only on a player's screen. The script goes through the network's item channel (Integrated Tunnels) and Integrated Crafting's planner, as the terminal does on the server. Deployed as a KubeJS server script. |
+| `IntegratedDynamicsScriptGameTests` + the Integrated Dynamics family on the KubeJS GameTest run | Tests the deployed script against Craftoria's jars, crafting a chest through a crafting interface included (networks built with Integrated Crafting's own GameTest helpers). ID's jar is used without its Refined Storage compat test class, which NeoForge would otherwise fail to load. The KubeJS module now builds and tests on Craftoria's NeoForge (`kubejs_neoforge_version`, 21.1.249), which ID's bundled compat mod requires. |
 | `ScriptErrors` recognises `throw new ApiError(...)` from a script | Scripts can fail with real kinds (`out_of_reach`, `not_found`) instead of a generic `failed`. |
 | `ServerLang` skips an unreadable lang file (or one bad value) with a warning | Server-side translation for players without the Numen client threw on malformed lang JSON, and a throw while sending a system message on the main tick crashes the server. Craftoria ships broken JSON in nine locales (de_de, es_ar, fr_fr, ko_kr, pl_pl, pt_br, ru_ru, tr_tr, zh_cn). Upstream `99983eb02` fixed only component-valued entries. Worth sending upstream. |
 
@@ -34,7 +36,7 @@ JDK 21 comes from mise (`mise install`). Secrets are read from the sibling `../m
 
 | Task | What it does | Time |
 |---|---|---|
-| `mise run test:scripts` | Headless GameTests: NeoForge + Numen + KubeJS + AE2 + Functional Storage; installs the real scripts and `/reload`s them. | ~1 min |
+| `mise run test:scripts` | Headless GameTests: NeoForge + Numen + KubeJS + AE2 + Functional Storage + Integrated Dynamics; installs the real scripts and `/reload`s them. | ~1 min |
 | `mise run craftoria:script` | Uploads every `plugins/kubejs/scripts/*.js` through the Calagopus panel API and runs `/reload` on the server. | seconds |
 | `mise run craftoria:log` | Tail of the server's KubeJS log (script errors). | seconds |
 | `mise run craftoria:cmd <command>` | Any console command through the panel. | seconds |
